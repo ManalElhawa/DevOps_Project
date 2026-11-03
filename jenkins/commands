@@ -1,0 +1,7 @@
+#docker compose up -d
+#sudo cat /var/lib/docker/volumes/jenkins_jenkins_data/_data/secrets/initialAdminPassword
+
+Jenkins Credentials:
+Username: jenkins
+
+Jenkins URL: http://localhost:8080/
