@@ -1,0 +1,634 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters:
+#These parameters can be updated when creating the stack
+  AmazonLinuxAMIID:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+
+  MasterUsername:
+    Type: String
+    Description: The username for the database.
+
+  MasterUserPassword:
+    Type: String
+    Description: The password for the database.
+    NoEcho: true
+
+Resources:
+#########
+# Network Resources
+#########
+  VPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      Tags:
+        - Key: Name
+          Value: Website VPC
+        - Key: Organization
+          Value: ATU
+        - Key: Environment
+          Value: Test
+
+#########
+# DB Resources
+#########
+  PrivateSubnet3:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.5.0/24
+      AvailabilityZone: !Select
+      - '0'
+      - !GetAZs ''
+      Tags:
+         - Key: Name
+           Value: Website DB Private Subnet 3
+         - Key: Organization
+           Value: ATU
+         - Key: Environment
+           Value: Test
+
+  PrivateSubnet4:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.7.0/24
+      AvailabilityZone: !Select
+        - '1'
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: Website DB Private Subnet 4
+        - Key: Organization
+          Value: ATU
+        - Key: Environment
+          Value: Test
+
+  DBPrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Website DB Private Route Table
+        - Key: Organization
+          Value: ATU
+        - Key: Environment
+          Value: Test
+
+  PrivateSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet3
+      RouteTableId: !Ref DBPrivateRouteTable
+
+  PrivateSubnet4RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet4
+      RouteTableId: !Ref DBPrivateRouteTable
+
+  DBSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Permit access from Web Security Group
+      GroupName: DB Security Group
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Website DB Security Group
+        - Key: Organization
+          Value: ATU
+        - Key: Environment
+          Value: Test
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '3306'
+          ToPort: '3306'
+          SourceSecurityGroupId: !Ref AppSecurityGroup
+
+  DBsubnetGroup:
+    Type: 'AWS::RDS::DBSubnetGroup'
+    Properties:
+      DBSubnetGroupName: DB Subnet Group
+      DBSubnetGroupDescription: DB Subnet Group
+      Tags:
+        - Key: Name
+          Value: Website DB Subnet Group
+        - Key: Organization
+          Value: ATU
+        - Key: Environment
+          Value: Test
+      SubnetIds:
+        - !Ref PrivateSubnet3
+        - !Ref PrivateSubnet4
+
+  RDSDBInstance:
+    Type: 'AWS::RDS::DBInstance'
+    Properties:
+      AllocatedStorage: 20
+      DBInstanceIdentifier: websitedb
+      Engine: MySQL
+      EngineVersion: '8.4.11'
+      VPCSecurityGroups:
+        - !Ref DBSecurityGroup
+      DBSubnetGroupName: !Ref DBsubnetGroup
+      MasterUsername: !Ref MasterUsername
+      MasterUserPassword: !Ref MasterUserPassword
+      DBInstanceClass: db.t3.micro
+      MultiAZ: false
+      Tags:
+         - Key: Name
+           Value: Website DB
+         - Key: Organization
+           Value: ATU
+         - Key: Environment
+           Value: Test
+#########
+# Web Resources
+#########
+  PublicSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.0.0/24
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: Website Web Public Subnet 1
+        - Key: Organization
+          Value: ATU
+        - Key: Environment
+          Value: Test
+
+  PublicSubnet2:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select
+        - '1'
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: Website Web Public Subnet 2
+        - Key: Organization
+          Value: ATU
+        - Key: Environment
+          Value: Test
+
+  InternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+    DependsOn:
+      - VPC
+
+  AttachGateway:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Website Public Route Table
+        - Key: Organization
+          Value: ATU
+        - Key: Environment
+          Value: Test
+  
+  PublicRoute:
+    Type: 'AWS::EC2::Route'
+    Properties:
+       RouteTableId: !Ref PublicRouteTable
+       DestinationCidrBlock: 0.0.0.0/0
+       GatewayId: !Ref InternetGateway
+    DependsOn:
+      - VPC
+      - AttachGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+       SubnetId: !Ref PublicSubnet1
+       RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+       SubnetId: !Ref PublicSubnet2
+       RouteTableId: !Ref PublicRouteTable
+
+  WebSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable HTTP access
+      GroupName: Web Security Group
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Website Web Security Group
+        - Key: Organization
+          Value: ATU
+        - Key: Environment
+          Value: Test
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: 0.0.0.0/0
+
+  WebLaunchTemplate:
+    Type: 'AWS::EC2::LaunchTemplate'
+    Properties:
+      LaunchTemplateName: WebLaunchTemplate
+      LaunchTemplateData:
+        InstanceType: t2.micro
+        ImageId: !Ref AmazonLinuxAMIID
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            AssociatePublicIpAddress: true
+            DeleteOnTermination: true
+            Groups:
+              - !Ref WebSecurityGroup
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash -xe
+            dnf install -y httpd
+            cat > /etc/httpd/conf.d/app-proxy.conf <<EOF
+            ProxyPreserveHost On
+            ProxyPass /app/ http://${AppApplicationLoadBalancer.DNSName}/
+            ProxyPassReverse /app/ http://${AppApplicationLoadBalancer.DNSName}/
+            EOF
+
+            cat > /var/www/html/index.html <<'EOF'
+            <h1>Student Name: Manal Elhawa</h1>
+            <h1>Student ID: L00205331</h1>
+            <p>Web layer is responding.</p>
+            <a href="/app/db-check.php">Check the app layer</a>
+            EOF
+
+            systemctl enable --now httpd
+
+  WebAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref WebLaunchTemplate
+        Version: !GetAtt WebLaunchTemplate.LatestVersionNumber
+      MaxSize: '4'
+      MinSize: '2'
+      DesiredCapacity: '2'
+      VPCZoneIdentifier:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      TargetGroupARNs:
+        - !Ref WebALBTargetGroup
+      MetricsCollection:
+        - Granularity: 1Minute
+      Tags:
+        - Key: Name
+          Value: Website Web AutoSclaing Group
+          PropagateAtLaunch: true
+        - Key: Organization
+          Value: ATU
+          PropagateAtLaunch: true
+        - Key: Environment
+          Value: Test
+          PropagateAtLaunch: true
+
+  WebAutoScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref WebAutoScalingGroup
+      AdjustmentType: ChangeInCapacity
+      ScalingAdjustment: '1'
+
+  WebApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: "WebsiteALB"
+      SecurityGroups:
+        - !Ref WebSecurityGroup
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      Tags:
+        - Key: Name
+          Value: Website ALB
+        - Key: Organization
+          Value: ATU
+        - Key: Environment
+          Value: Test
+
+  WebALBTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      HealthCheckIntervalSeconds: '30'
+      HealthCheckTimeoutSeconds: '5'
+      Port: '80'
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Website Web ALB TargetGroup
+        - Key: Organization
+          Value: ATU
+        - Key: Environment
+          Value: Test
+
+  WebALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref WebALBTargetGroup
+      LoadBalancerArn: !Ref WebApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      Tags:
+        - Key: Name
+          Value: Website Web ALB Listener
+        - Key: Organization
+          Value: ATU
+        - Key: Environment
+          Value: Test
+
+  NatGatewayEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    DependsOn: PublicSubnet1
+    Properties:
+      ConnectivityType: public
+      AllocationId: !GetAtt NatGatewayEIP.AllocationId
+      SubnetId: !GetAtt PublicSubnet1.SubnetId
+  
+#########
+# APP Resources
+#########
+  PrivateSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: Website APP Private Subnet 1
+        - Key: Organization
+          Value: ATU
+        - Key: Environment
+          Value: Test
+
+  PrivateSubnet2:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: !Select
+        - '1'
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: Website APP Private Subnet 2
+        - Key: Organization
+          Value: ATU
+        - Key: Environment
+          Value: Test
+
+  AppPrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Website APP Private Route Table
+        - Key: Organization
+          Value: ATU
+        - Key: Environment
+          Value: Test
+
+  AppPrivateRoute:
+    Type: AWS::EC2::Route
+    DependsOn: NatGateway
+    Properties:
+      RouteTableId: !Ref AppPrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref AppPrivateRouteTable
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref AppPrivateRouteTable
+  
+  AppSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Allow HTTP from the app load balancer to the app instances
+      GroupName: App Security Group
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Website App Security Group
+        - Key: Organization
+          Value: ATU
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          SourceSecurityGroupId: !Ref AppALBSecurityGroup
+          
+
+  AppALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP from the web tier to the app load balancer
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref WebSecurityGroup
+
+  AppLaunchTemplate:
+    Type: 'AWS::EC2::LaunchTemplate'
+    Properties:
+      LaunchTemplateName: AppLaunchTemplate
+      LaunchTemplateData:
+        InstanceType: t2.micro
+        ImageId: !Ref AmazonLinuxAMIID
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            DeleteOnTermination: true
+            Groups:
+              - !Ref AppSecurityGroup
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash -xe
+            dnf install -y httpd php php-mysqli
+
+            cat > /var/www/html/db-check.php <<'PHP'
+            <?php
+            $host = '${RDSDBInstance.Endpoint.Address}';
+            $user = '${MasterUsername}';
+            $password = '${MasterUserPassword}';
+
+            mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+
+            try {
+                $db = new mysqli($host, $user, $password, 'mysql', 3306);
+                $result = $db->query('SELECT 1 AS connection_test, VERSION() AS server_version');
+                $details = $result->fetch_assoc();
+
+                header('Content-Type: text/plain');
+                echo "App tier: connected\n";
+                echo "Database test: SELECT 1 returned " . $details['connection_test'] . "\n";
+                echo "MySQL server version: " . $details['server_version'] . "\n";
+            } catch (Throwable $e) {
+                http_response_code(500);
+                header('Content-Type: text/plain');
+                echo "Database connection failed.";
+                error_log($e->getMessage());
+            }
+            ?>
+            PHP
+
+            cat > /var/www/html/health.php <<'PHP'
+            <?php
+            http_response_code(200);
+            echo "healthy";
+            ?>
+            PHP
+            
+            systemctl enable --now httpd
+
+  AppAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref AppLaunchTemplate
+        Version: !GetAtt AppLaunchTemplate.LatestVersionNumber
+      MaxSize: '4'
+      MinSize: '2'
+      DesiredCapacity: '2'
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      TargetGroupARNs:
+        - !Ref AppALBTargetGroup
+      MetricsCollection:
+        - Granularity: 1Minute
+      Tags:
+        - Key: Name
+          Value: Website App AutoSclaing Group
+          PropagateAtLaunch: true
+        - Key: Organization
+          Value: ATU
+          PropagateAtLaunch: true
+        - Key: Environment
+          Value: Test
+          PropagateAtLaunch: true
+
+  AppAutoScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref AppAutoScalingGroup
+      AdjustmentType: ChangeInCapacity
+      ScalingAdjustment: '1'
+
+  AppApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: "AppALB"
+      Scheme: internal
+      SecurityGroups:
+        - !Ref AppALBSecurityGroup
+      Subnets:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: App ALB
+        - Key: Organization
+          Value: ATU
+        - Key: Environment
+          Value: Test
+
+  AppALBTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      HealthCheckIntervalSeconds: '30'
+      HealthCheckTimeoutSeconds: '5'
+      HealthCheckPath: /health.php
+      Port: '80'
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Website App ALB TargetGroup
+        - Key: Organization
+          Value: ATU
+        - Key: Environment
+          Value: Test
+
+  AppALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref AppALBTargetGroup
+      LoadBalancerArn: !Ref AppApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      Tags:
+        - Key: Name
+          Value: Website App ALB Listener
+        - Key: Organization
+          Value: ATU
+        - Key: Environment
+          Value: Test
+
+Outputs:
+  WebsiteURL:
+    Description: Public website URL
+    Value: !Sub 'http://${WebApplicationLoadBalancer.DNSName}'
+
+  DatabaseCheckURL:
+    Description: URL that checks app-to-database connectivity
+    Value: !Sub 'http://${WebApplicationLoadBalancer.DNSName}/app/db-check.php'
+
+  DatabaseEndpoint:
+    Description: RDS endpoint hostname
+    Value: !GetAtt RDSDBInstance.Endpoint.Address
+
+  DatabasePort:
+    Description: RDS connection port
+    Value: !GetAtt RDSDBInstance.Endpoint.Port
+
+  InternalAppLoadBalancerDNS:
+    Description: Internal app load balancer DNS name
+    Value: !GetAtt AppApplicationLoadBalancer.DNSName

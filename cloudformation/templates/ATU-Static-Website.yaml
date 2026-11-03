@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: Static website using AWS CloudFront and S3
+
+Resources:
+  # 1. Private bucket for website content
+  WebsiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      Tags:
+        - Key: Name
+          Value: Website Bucket
+        - Key: Organization
+          Value: ATU
+        - Key: Environment
+          Value: Test
+
+  # 2. CloudFront Origin Access Control
+  WebsiteOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub '${AWS::StackName}-oac'
+        Description: Access private S3 website bucket
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # 3. CloudFront distribution
+  WebsiteDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: Static website distribution
+        DefaultRootObject: index.html
+        HttpVersion: http2
+        IPV6Enabled: true
+
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt WebsiteBucket.RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+            OriginAccessControlId: !GetAtt WebsiteOAC.Id
+
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+          CachedMethods:
+            - GET
+            - HEAD
+          Compress: true
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+      
+      Tags:
+        - Key: Name
+          Value: Website CloudFront Distribution
+        - Key: Organization
+          Value: ATU
+        - Key: Environment
+          Value: Test
+
+  # 4. Allow only this distribution to read S3 objects
+  WebsiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebsiteBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontReadOnly
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub '${WebsiteBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub
+                  - 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${DistributionId}'
+                  - DistributionId: !Ref WebsiteDistribution
+
+Outputs:
+  WebsiteURL:
+    Description: CloudFront website URL
+    Value: !Sub 'https://${WebsiteDistribution.DomainName}'
+
+  BucketName:
+    Value: !Ref WebsiteBucket
+
+  DistributionId:
+    Value: !Ref WebsiteDistribution
