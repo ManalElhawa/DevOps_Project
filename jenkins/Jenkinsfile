@@ -1,15 +1,42 @@
 pipeline {
     agent any
     stages {
-        stage('Checkout Code') {
+        stage('Checkout') {
             steps {
-                echo 'Webhook triggered successfully! Code checked out.'
+                checkout scm
             }
         }
-        stage('Run Tests') {
+        stage('Security & Static Analysis') {
             steps {
-                echo 'Running your application tests...'
+                script {
+                    def templates = findFiles(glob: 'cloudformation/templates/*.yaml')
+                    for (file in templates) {
+                        echo "--- Scanning security for: ${file.path} ---"
+                        sh "snyk iac test ${file.path}"
+                        sh "trivy config ${file.path}"
+                    }
+                }
             }
+        }
+        stage('Linting & Validation') {
+            steps {
+                script {
+                    def templates = findFiles(glob: 'cloudformation/templates/*.yaml')
+                    for (file in templates) {
+                        echo "--- Validating syntax for: ${file.path} ---"
+                        sh "cfn-lint ${file.path}"
+                        sh "aws cloudformation validate-template --template-body file://${file.path}"
+                    }
+                }
+            }
+        }
+    }
+    post {
+        success {
+            echo 'All CloudFormation templates passed security and validation checks!'
+        }
+        failure {
+            echo 'Pipeline failed. Check scanner output above for errors in your templates.'
         }
     }
 }
