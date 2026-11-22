@@ -23,23 +23,20 @@ pipeline {
         }
         stage('Linting & Validation') {
             steps {
-                sh '''
-                    for file in cloudformation/templates/ATU-3Tier-Website.yaml cloudformation/templates/ATU-Static-Website.yaml; do
-                        if [ -f "$file" ]; then
-                            echo "--- Validating syntax for: $file ---"
-                            # cfn-lint -b -i W1011 "$file" || true
-
-                            withCredentials([
-                            string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
-                            string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
-                          ]) {
-                             sh '''
+                withCredentials([
+                    string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
+                ]) {
+                    sh '''
+                        for file in cloudformation/templates/ATU-3Tier-Website.yaml cloudformation/templates/ATU-Static-Website.yaml; do
+                            if [ -f "$file" ]; then
+                                echo "--- Validating syntax for: $file ---"
+                                # cfn-lint -b -i W1011 "$file" || true
                                 aws cloudformation validate-template --template-body "file://$file"
-                                '''
-                            }
-                        fi
-                    done
-                '''
+                            fi
+                        done
+                    '''
+                }
             }
         }
     }
