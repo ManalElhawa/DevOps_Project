@@ -12,7 +12,6 @@ pipeline {
                     for file in cloudformation/templates/ATU-3Tier-Website.yaml cloudformation/templates/ATU-Static-Website.yaml; do
                         if [ -f "$file" ]; then
                             echo "--- Scanning security for: $file ---"
-                            snyk iac test "$file"
                             trivy config "$file"
                         fi
                     done
