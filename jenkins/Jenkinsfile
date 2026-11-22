@@ -1,7 +1,7 @@
 pipeline {
     agent any
     environment {
-        AWS_DEFAULT_REGION = 'eu-west-1' // change to your target AWS region
+        AWS_DEFAULT_REGION = 'us-east-1' // change to your target AWS region
     }
     stages {
         stage('Checkout') {
@@ -28,7 +28,15 @@ pipeline {
                         if [ -f "$file" ]; then
                             echo "--- Validating syntax for: $file ---"
                             # cfn-lint -b -i W1011 "$file" || true
-                            aws cloudformation validate-template --template-body file://$file
+
+                            withCredentials([
+                            string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+                            string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
+                          ]) {
+                             sh '''
+                                aws cloudformation validate-template --template-body "file://$file"
+                                '''
+                            }
                         fi
                     done
                 '''
