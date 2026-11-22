@@ -39,6 +39,37 @@ pipeline {
                 }
             }
         }
+        stage('Deploy') {
+        steps {
+        withCredentials([
+            string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+            string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY'),
+            string(credentialsId: 'db-master-username', variable: 'DB_USER'),
+            string(credentialsId: 'db-master-password', variable: 'DB_PASS')
+        ]) {
+            sh '''
+                if [ -f cloudformation/templates/ATU-Static-Website.yaml ]; then
+                    echo "--- Deploying Static Website stack ---"
+                    aws cloudformation deploy \
+                        --template-file cloudformation/templates/ATU-Static-Website.yaml \
+                        --stack-name atu-static-website \
+                        --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM
+                fi
+
+                if [ -f cloudformation/templates/ATU-3Tier-Website.yaml ]; then
+                    echo "--- Deploying 3-Tier Website stack ---"
+                    aws cloudformation deploy \
+                        --template-file cloudformation/templates/ATU-3Tier-Website.yaml \
+                        --stack-name atu-3tier-website \
+                        --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+                        --parameter-overrides \
+                            MasterUsername="$DB_USER" \
+                            MasterUserPassword="$DB_PASS"
+                fi
+            '''
+        }
+    }
+}
     }
     post {
         success {
