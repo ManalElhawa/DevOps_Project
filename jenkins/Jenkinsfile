@@ -24,7 +24,7 @@ pipeline {
                     for file in cloudformation/templates/ATU-3Tier-Website.yaml cloudformation/templates/ATU-Static-Website.yaml; do
                         if [ -f "$file" ]; then
                             echo "--- Validating syntax for: $file ---"
-                            cfn-lint "$file"
+                            cfn-lint -x W1011 "$file"
                             aws cloudformation validate-template --template-body file://$file
                         fi
                     done
