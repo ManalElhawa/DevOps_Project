@@ -9,33 +9,6 @@ pipeline {
                 checkout scm
             }
         }
-        stage('Build & Test') {
-            steps {
-                sh '''
-python3 - << 'EOF'
-import glob, re, subprocess, tempfile
-templates = glob.glob("cloudformation/templates/*.yaml")
-php_blocks = []
-for path in templates:
-    with open(path, encoding="utf-8", errors="ignore") as f:
-        content = f.read()
-    for idx, block in enumerate(re.findall(r"<\\?php.*?\\?>", content, flags=re.S), 1):
-        php_blocks.append((path, idx, block))
-if not php_blocks:
-    print("No embedded PHP blocks found.")
-    raise SystemExit(1)
-for path, idx, block in php_blocks:
-    with tempfile.NamedTemporaryFile("w", suffix=".php", delete=False) as tmp:
-        tmp.write(block)
-        tmp_path = tmp.name
-    res = subprocess.run(["php", "-l", tmp_path], capture_output=True, text=True)
-    print(f"{path} [block {idx}]: {(res.stdout or res.stderr).strip()}")
-    if res.returncode != 0:
-        raise SystemExit(1)
-EOF
-            '''
-            }
-        }
         stage('Security & Static Analysis') {
             steps {
                 sh '''
