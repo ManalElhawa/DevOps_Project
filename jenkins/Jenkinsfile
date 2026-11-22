@@ -9,6 +9,21 @@ pipeline {
                 checkout scm
             }
         }
+        stage('Build & Test') {
+            steps {
+                sh '''
+                echo "--- Checking repository files ---"
+                ls -la
+
+                echo "--- Running PHP syntax checks (if any .php files exist) ---"
+                if find . -maxdepth 4 -name "*.php" | grep -q .; then
+                    find . -maxdepth 4 -name "*.php" -exec php -l {} +
+                else
+                    echo "No local .php files found in repository; skipping php -l."
+                fi
+                 '''
+            }
+        }
         stage('Security & Static Analysis') {
             steps {
                 sh '''
