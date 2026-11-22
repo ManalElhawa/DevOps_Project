@@ -112,11 +112,22 @@ pipeline {
     }
     }
     post {
-        success {
-            echo 'All CloudFormation templates passed security and validation checks!'
-        }
-        failure {
-            echo 'Pipeline failed. Check scanner output above for errors in your templates.'
-        }
+      success {
+        withCredentials([string(credentialsId: 'slack-webhook-url', variable: 'SLACK_WEBHOOK_URL')]) {
+        sh '''
+          curl -s -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"✅ Deployment succeeded: ${JOB_NAME} #${BUILD_NUMBER} (${BUILD_URL})\"}" \
+            "$SLACK_WEBHOOK_URL"
+        '''
+      }
+    }
+      failure {
+        withCredentials([string(credentialsId: 'slack-webhook-url', variable: 'SLACK_WEBHOOK_URL')]) {
+        sh '''
+          curl -s -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"❌ Deployment failed: ${JOB_NAME} #${BUILD_NUMBER} (${BUILD_URL})\"}" \
+            "$SLACK_WEBHOOK_URL"
+        '''
+      }
     }
 }
