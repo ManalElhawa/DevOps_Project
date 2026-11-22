@@ -61,32 +61,36 @@ pipeline {
 }
     stage('Upload Static Site to S3') {
         steps {
-            sh '''
-                set -euo pipefail
-                STACK_NAME="atu-static-website"
-                REGION="us-east-1"
+            withCredentials([
+                string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+                string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')            ]) {
+                sh '''
+                    set -euo pipefail
+                    export AWS_DEFAULT_REGION="us-east-1"
+                    STACK_NAME="atu-static-website"
 
-                BUCKET_NAME=$(aws cloudformation describe-stacks \
-                  --region "$REGION" \
-                  --stack-name "$STACK_NAME" \
-                  --query "Stacks[0].Outputs[?OutputKey=='BucketName'].OutputValue" \
-                  --output text)
+                    BUCKET_NAME=$(aws cloudformation describe-stacks \
+                      --region "$AWS_DEFAULT_REGION" \
+                      --stack-name "$STACK_NAME" \
+                      --query "Stacks[0].Outputs[?OutputKey=='BucketName'].OutputValue" \
+                      --output text)
 
-                DIST_ID=$(aws cloudformation describe-stacks \
-                  --region "$REGION" \
-                  --stack-name "$STACK_NAME" \
-                  --query "Stacks[0].Outputs[?OutputKey=='DistributionId'].OutputValue" \
-                  --output text)
+                    DIST_ID=$(aws cloudformation describe-stacks \
+                      --region "$AWS_DEFAULT_REGION" \
+                      --stack-name "$STACK_NAME" \
+                      --query "Stacks[0].Outputs[?OutputKey=='DistributionId'].OutputValue" \
+                      --output text)
 
-                aws s3 cp index.html "s3://${BUCKET_NAME}/index.html" \
-                  --region "$REGION" \
-                  --content-type "text/html; charset=utf-8" \
-                  --cache-control "max-age=60"
+                    aws s3 cp index.html "s3://${BUCKET_NAME}/index.html" \
+                      --region "$AWS_DEFAULT_REGION" \
+                      --content-type "text/html; charset=utf-8" \
+                      --cache-control "max-age=60"
 
-                aws cloudfront create-invalidation \
-                  --distribution-id "$DIST_ID" \
-                  --paths "/index.html"
-            '''
+                    aws cloudfront create-invalidation \
+                      --distribution-id "$DIST_ID" \
+                      --paths "/index.html"
+                '''
+            }
         }
     }
     }
