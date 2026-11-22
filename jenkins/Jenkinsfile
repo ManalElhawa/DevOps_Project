@@ -112,23 +112,22 @@ pipeline {
     }
     }
     post {
-      success {
-        withCredentials([string(credentialsId: 'slack-webhook-url', variable: 'SLACK_WEBHOOK_URL')]) {
-        sh '''
-          curl -s -X POST -H 'Content-type: application/json' \
-            --data "{\"text\":\"✅ Deployment succeeded: ${JOB_NAME} #${BUILD_NUMBER} (${BUILD_URL})\"}" \
-            "$SLACK_WEBHOOK_URL"
-        '''
-      }
-      }
-      failure {
-        withCredentials([string(credentialsId: 'slack-webhook-url', variable: 'SLACK_WEBHOOK_URL')]) {
-        sh '''
-          curl -s -X POST -H 'Content-type: application/json' \
-            --data "{\"text\":\"❌ Deployment failed: ${JOB_NAME} #${BUILD_NUMBER} (${BUILD_URL})\"}" \
-            "$SLACK_WEBHOOK_URL"
-        '''
-      }
-      }
-   }
+  always {
+    withCredentials([string(credentialsId: 'slack-webhook-url', variable: 'SLACK_WEBHOOK_URL')]) {
+      sh '''
+        if [ "${currentBuild_result:-SUCCESS}" = "SUCCESS" ]; then
+          MSG="✅ Deployment succeeded: ${JOB_NAME} #${BUILD_NUMBER} (${BUILD_URL})"
+        else
+          MSG="❌ Deployment failed: ${JOB_NAME} #${BUILD_NUMBER} (${BUILD_URL})"
+        fi
+
+        printf '{"text":"%s"}' "$MSG" > /tmp/slack_payload.json
+        curl -fsS -X POST -H 'Content-Type: application/json' \
+          --data @/tmp/slack_payload.json \
+          "$SLACK_WEBHOOK_URL" || echo "Slack notify failed (non-blocking)"
+        rm -f /tmp/slack_payload.json
+      '''
+    }
+  }
+}
 }
