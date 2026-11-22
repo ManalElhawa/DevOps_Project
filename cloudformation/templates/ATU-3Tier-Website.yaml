@@ -372,7 +372,7 @@ Resources:
 
   NatGateway:
     Type: AWS::EC2::NatGateway
-    DependsOn: PublicSubnet1
+#    DependsOn: PublicSubnet1
     Properties:
       ConnectivityType: public
       AllocationId: !GetAtt NatGatewayEIP.AllocationId
@@ -427,7 +427,7 @@ Resources:
 
   AppPrivateRoute:
     Type: AWS::EC2::Route
-    DependsOn: NatGateway
+#    DependsOn: NatGateway
     Properties:
       RouteTableId: !Ref AppPrivateRouteTable
       DestinationCidrBlock: 0.0.0.0/0
