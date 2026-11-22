@@ -12,7 +12,7 @@ pipeline {
         stage('Security & Static Analysis') {
             steps {
                 sh '''
-                    for file in cloudformation/templates/ATU-3Tier-Website.yaml cloudformation/templates/ATU-Static-Website.yaml; do
+                    for file in cloudformation/templates/ATU-Static-Website.yaml; do
                         if [ -f "$file" ]; then
                             echo "--- Scanning security for: $file ---"
                             trivy config "$file"
@@ -28,7 +28,7 @@ pipeline {
                     string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
                 ]) {
                     sh '''
-                        for file in cloudformation/templates/ATU-3Tier-Website.yaml cloudformation/templates/ATU-Static-Website.yaml; do
+                        for file in cloudformation/templates/ATU-Static-Website.yaml; do
                             if [ -f "$file" ]; then
                                 echo "--- Validating syntax for: $file ---"
                                 # cfn-lint -b -i W1011 "$file" || true
@@ -55,35 +55,40 @@ pipeline {
                         --stack-name atu-static-website \
                         --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM
                 fi
-
-                if [ -f cloudformation/templates/ATU-3Tier-Website.yaml ]; then
-                    echo "--- Deploying 3-Tier Website stack ---"
-                    aws cloudformation deploy \
-                        --template-file cloudformation/templates/ATU-3Tier-Website.yaml \
-                        --stack-name atu-3tier-website \
-                        --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
-                        --parameter-overrides \
-                            MasterUsername="$DB_USER" \
-                            MasterUserPassword="$DB_PASS"
-                    
-                    echo "--- Running post-deploy smoke test ---"
-                    WEBSITE_URL=$(aws cloudformation describe-stacks \
-                    --stack-name atu-3tier-website \
-                    --query "Stacks[0].Outputs[?OutputKey=='WebsiteURL'].OutputValue" \
-                    --output text 2>/dev/null || true)
-
-                    if [ -n "$WEBSITE_URL" ] && [ "$WEBSITE_URL" != "None" ]; then
-                      echo "Testing $WEBSITE_URL"
-                      curl -fsS --max-time 15 "$WEBSITE_URL" > /dev/null
-                      echo "WebsiteURL responded with HTTP 200."
-                    else
-                      echo "WebsiteURL output not found yet."
-                    fi
-                fi
             '''
         }
     }
 }
+    stage('Upload Static Site to S3') {
+        steps {
+            sh '''
+                set -euo pipefail
+                STACK_NAME="atu-static-website"
+                REGION="us-east-1"
+
+                BUCKET_NAME=$(aws cloudformation describe-stacks \
+                  --region "$REGION" \
+                  --stack-name "$STACK_NAME" \
+                  --query "Stacks[0].Outputs[?OutputKey=='BucketName'].OutputValue" \
+                  --output text)
+
+                DIST_ID=$(aws cloudformation describe-stacks \
+                  --region "$REGION" \
+                  --stack-name "$STACK_NAME" \
+                  --query "Stacks[0].Outputs[?OutputKey=='DistributionId'].OutputValue" \
+                  --output text)
+
+                aws s3 cp index.html "s3://${BUCKET_NAME}/index.html" \
+                  --region "$REGION" \
+                  --content-type "text/html; charset=utf-8" \
+                  --cache-control "max-age=60"
+
+                aws cloudfront create-invalidation \
+                  --distribution-id "$DIST_ID" \
+                  --paths "/index.html"
+            '''
+        }
+    }
     }
     post {
         success {
