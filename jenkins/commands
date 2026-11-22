@@ -1,0 +1,42 @@
+#docker compose up -d
+#sudo cat /var/lib/docker/volumes/jenkins_jenkins_data/_data/secrets/initialAdminPassword
+
+Jenkins URL: http://localhost:8080/
+
+## Install localtunnel
+sudo apt update && sudo apt install -y nodejs npm
+sudo npm install -g localtunnel
+sudo npm fund
+lt --port 8080
+DEBUG=localtunnel:* lt --port 8080
+
+## Install CloudFlare
+sudo npm install --global cf --> not correct
+sudo npm i -g cloudflared
+
+Jenkins URL: https://thereof-desert-compete-engage.trycloudflare.com 
+
+## Install 
+docker exec -u root -it jenkins-jenkins-1 bash
+
+# Update and install basic dependencies
+apt-get update && apt-get install -y curl unzip python3-pip python3-venv
+
+# Install cfn-lint via pip
+pip3 install cfn-lint --break-system-packages
+
+# Install AWS CLI v2
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+./aws/install
+
+# Install Trivy
+apt-get install -y wget apt-transport-https gnupg lsb-release
+wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | tee /usr/share/keyrings/trivy.gpg > /dev/null
+echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" | tee /etc/apt/sources.list.d/trivy.list
+apt-get update && apt-get install -y trivy
+
+# Install Snyk CLI
+curl https://static.snyk.io/cli/latest/snyk-linux -o /usr/local/bin/snyk
+chmod +x /usr/local/bin/snyk
+

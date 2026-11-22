@@ -1,0 +1,135 @@
+pipeline {
+    agent any
+    environment {
+        AWS_DEFAULT_REGION = 'us-east-1' // change to your target AWS region
+    }
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+        stage('Security & Static Analysis') {
+            steps {
+                sh '''
+                    for file in cloudformation/templates/ATU-Static-Website.yaml; do
+                        if [ -f "$file" ]; then
+                            echo "--- Scanning security for: $file ---"
+                            trivy config "$file"
+                        fi
+                    done
+                '''
+            }
+        }
+        stage('Linting & Validation') {
+            steps {
+                withCredentials([
+                    string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
+                ]) {
+                    sh '''
+                        for file in cloudformation/templates/ATU-Static-Website.yaml; do
+                            if [ -f "$file" ]; then
+                                echo "--- Validating syntax for: $file ---"
+                                cfn-lint "$file"
+                                aws cloudformation validate-template --template-body "file://$file"
+                            fi
+                        done
+                    '''
+                }
+            }
+        }
+        stage('Validate HTML') {
+        steps {
+        sh '''
+            set -euo pipefail
+
+            #Make sure index.html exists and is not empty
+            test -s index.html
+
+            #Run htmlhint if installed (or install/run via npx)
+            if command -v htmlhint >/dev/null 2>&1; then
+                htmlhint index.html
+            elif command -v npx >/dev/null 2>&1; then
+                npx --yes htmlhint index.html
+            fi
+        '''
+    }
+}
+        stage('Deploy') {
+        steps {
+        withCredentials([
+            string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+            string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY'),
+            string(credentialsId: 'db-master-username', variable: 'DB_USER'),
+            string(credentialsId: 'db-master-password', variable: 'DB_PASS')
+        ]) {
+            sh '''
+                if [ -f cloudformation/templates/ATU-Static-Website.yaml ]; then
+                    echo "--- Deploying Static Website stack ---"
+                    aws cloudformation deploy \
+                        --template-file cloudformation/templates/ATU-Static-Website.yaml \
+                        --stack-name atu-static-website \
+                        --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM
+                fi
+            '''
+        }
+    }
+}
+    stage('Upload Static Site to S3') {
+        steps {
+            withCredentials([
+                string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+                string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')            ]) {
+                sh '''
+                    set -euo pipefail
+                    export AWS_DEFAULT_REGION="us-east-1"
+                    STACK_NAME="atu-static-website"
+
+                    BUCKET_NAME=$(aws cloudformation describe-stacks \
+                      --region "$AWS_DEFAULT_REGION" \
+                      --stack-name "$STACK_NAME" \
+                      --query "Stacks[0].Outputs[?OutputKey=='BucketName'].OutputValue" \
+                      --output text)
+
+                    DIST_ID=$(aws cloudformation describe-stacks \
+                      --region "$AWS_DEFAULT_REGION" \
+                      --stack-name "$STACK_NAME" \
+                      --query "Stacks[0].Outputs[?OutputKey=='DistributionId'].OutputValue" \
+                      --output text)
+
+                    aws s3 cp index.html "s3://${BUCKET_NAME}/index.html" \
+                      --region "$AWS_DEFAULT_REGION" \
+                      --content-type "text/html; charset=utf-8" \
+                      --cache-control "max-age=60"
+
+                    aws cloudfront create-invalidation \
+                      --distribution-id "$DIST_ID" \
+                      --paths "/index.html"
+                '''
+            }
+        }
+    }
+    }
+    post {
+  always {
+    withEnv(["BUILD_RESULT=${currentBuild.currentResult}"]) {
+      withCredentials([string(credentialsId: 'slack-webhook-url', variable: 'SLACK_WEBHOOK_URL')]) {
+        sh '''
+          if [ "$BUILD_RESULT" = "SUCCESS" ]; then
+            MSG="✅ Deployment succeeded: ${JOB_NAME} #${BUILD_NUMBER} (${BUILD_URL})"
+          else
+            MSG="❌ Deployment failed: ${JOB_NAME} #${BUILD_NUMBER} (${BUILD_URL})"
+          fi
+
+          printf '{"text":"%s"}' "$MSG" > /tmp/slack_payload.json
+          curl -fsS -X POST -H 'Content-Type: application/json' \
+            --data @/tmp/slack_payload.json \
+            "$SLACK_WEBHOOK_URL" || echo "Slack notify failed (non-blocking)"
+          rm -f /tmp/slack_payload.json
+        '''
+      }
+    }
+  }
+}
+}
