@@ -39,6 +39,23 @@ pipeline {
                 }
             }
         }
+        stage('Validate HTML') {
+        steps {
+        sh '''
+            set -euo pipefail
+
+            #Make sure index.html exists and is not empty
+            test -s index.html
+
+            #Run htmlhint if installed (or install/run via npx)
+            if command -v htmlhint >/dev/null 2>&1; then
+                htmlhint index.html
+            elif command -v npx >/dev/null 2>&1; then
+                npx --yes htmlhint index.html
+            fi
+        '''
+    }
+}
         stage('Deploy') {
         steps {
         withCredentials([
