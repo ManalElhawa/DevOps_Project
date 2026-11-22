@@ -80,6 +80,20 @@ pipeline {
                         --parameter-overrides \
                             MasterUsername="$DB_USER" \
                             MasterUserPassword="$DB_PASS"
+                    
+                    echo "--- Running post-deploy smoke test ---"
+                    WEBSITE_URL=$(aws cloudformation describe-stacks \
+                    --stack-name atu-3tier-website \
+                    --query "Stacks[0].Outputs[?OutputKey=='WebsiteURL'].OutputValue" \
+                    --output text 2>/dev/null || true)
+
+                    if [ -n "$WEBSITE_URL" ] && [ "$WEBSITE_URL" != "None" ]; then
+                      echo "Testing $WEBSITE_URL"
+                      curl -fsS --max-time 15 "$WEBSITE_URL" > /dev/null
+                      echo "WebsiteURL responded with HTTP 200."
+                    else
+                      echo "WebsiteURL output not found yet."
+                    fi
                 fi
             '''
         }
